@@ -84,6 +84,11 @@ textarea{min-height:96px;resize:vertical}
 .tabs .btn{padding:6px 12px}
 .tabs .btn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .foot{margin-top:28px;font-size:12px;color:var(--muted)}
+.lines{display:inline-flex;gap:4px;margin-top:12px;background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:4px}
+.lines button{border:none;background:none;border-radius:999px;padding:7px 14px;font-weight:700;font-size:13.5px;cursor:pointer;color:var(--muted)}
+.lines button.on{background:var(--ink);color:var(--paper)}
+.lines+.sub{margin-top:10px}
+.lines button small{font-weight:600;opacity:.75;margin-left:4px}
 @media (prefers-reduced-motion:no-preference){.panel{animation:up .18s ease-out}@keyframes up{from{transform:translateY(16px);opacity:.6}to{transform:none;opacity:1}}}
 </style>
 </head>
@@ -94,6 +99,7 @@ textarea{min-height:96px;resize:vertical}
     <button class="btn primary" id="btnNew" type="button">+ Prospecto</button>
   </header>
   <h1>Prospectos y seguimiento</h1>
+  <div class="lines" id="lines" role="tablist" aria-label="Línea de negocio"></div>
   <p class="sub" id="summary">Cargando prospectos…</p>
   <div class="status" id="status" role="status"></div>
 
@@ -122,23 +128,54 @@ textarea{min-height:96px;resize:vertical}
 const API_URL = 'https://script.google.com/macros/s/AKfycby44h34jyVSVXJylZygOvXf01FGG1PCDIcu1cyBgwsnXBLPxWssjmPq2C1GiP_-VWHoDw/exec';
 const TOKEN = 'PAE-CRM-2026';
 /* ======================================================================================================= */
-const STAGES = [
-  {id:'sin', label:'Sin propuesta', c:'--muted', bg:'--line'},
-  {id:'por', label:'Por enviar', c:'--accent', bg:'--accent-soft'},
-  {id:'env', label:'Enviada', c:'--warn', bg:'--warn-soft'},
-  {id:'seg', label:'En seguimiento', c:'--warn', bg:'--warn-soft'},
-  {id:'cita', label:'Cita agendada', c:'--accent', bg:'--accent-soft'},
-  {id:'cer', label:'Cerrado', c:'--ok', bg:'--ok-soft'},
-  {id:'per', label:'Perdido', c:'--bad', bg:'--bad-soft'}
-];
-const SMAP = Object.fromEntries(STAGES.map(s=>[s.id,s]));
+const LINES = {
+  pae: {name:'Contenido P.A.E.', first:'por', open:['por'], closed:['cer','per','sin'], stages:[
+    {id:'sin', label:'Sin propuesta', c:'--muted', bg:'--line'},
+    {id:'por', label:'Por enviar', c:'--accent', bg:'--accent-soft'},
+    {id:'env', label:'Enviada', c:'--warn', bg:'--warn-soft'},
+    {id:'seg', label:'En seguimiento', c:'--warn', bg:'--warn-soft'},
+    {id:'cita', label:'Cita agendada', c:'--accent', bg:'--accent-soft'},
+    {id:'cer', label:'Cerrado', c:'--ok', bg:'--ok-soft'},
+    {id:'per', label:'Perdido', c:'--bad', bg:'--bad-soft'}],
+    tpls:['propuesta','seguimiento1','seguimiento2','cita'], fileLabel:'Archivo de la propuesta'},
+  redeo: {name:'Redeo', first:'rpor', open:['rpor'], closed:['ract','rper'], stages:[
+    {id:'rpor', label:'Por contactar', c:'--accent', bg:'--accent-soft'},
+    {id:'rcon', label:'Contactado', c:'--warn', bg:'--warn-soft'},
+    {id:'rpru', label:'En prueba gratis', c:'--accent', bg:'--accent-soft'},
+    {id:'rpag', label:'Por pagar', c:'--warn', bg:'--warn-soft'},
+    {id:'ract', label:'Cliente activo', c:'--ok', bg:'--ok-soft'},
+    {id:'rper', label:'Perdido', c:'--bad', bg:'--bad-soft'}],
+    tpls:['r_intro','r_prueba','r_mitad','r_fin','r_bienv'], fileLabel:'Plan o nota de la visita'}
+};
+const ALL_STAGES = [...LINES.pae.stages, ...LINES.redeo.stages];
+const SMAP = Object.fromEntries(ALL_STAGES.map(s=>[s.id,s]));
 const DEFAULT_TPL = {
   propuesta:'Hola {nombre}, ¿cómo estás? Soy Raúl Sánchez, de P.A.E. Te comparto la propuesta que armamos para {negocio}, con las ideas de video del primer mes y los paquetes. Me gustaría platicarla contigo en 30 minutos. ¿Qué día de esta semana te queda?',
   seguimiento1:'Hola {nombre}, ¿alcanzaste a revisar la propuesta de {negocio}? Me gustaría saber cuál de las ideas te llamó más la atención.',
   seguimiento2:'Hola {nombre}, sé que la semana se va rápido. Si te sirve, te explico la propuesta en 15 minutos por llamada. ¿Te queda hoy o mañana?',
-  cita:'Hola {nombre}, te confirmo nuestra reunión del {fecha}. Llevo las ideas para {negocio} para revisarlas juntos.'
+  cita:'Hola {nombre}, te confirmo nuestra reunión del {fecha}. Llevo las ideas para {negocio} para revisarlas juntos.',
+  r_intro:'Hola {nombre}, soy Raúl, de Redeo. Hacemos tarjetas de sellos digitales para que los clientes de {negocio} regresen más seguido, y viven en el celular de cada cliente. ¿Te enseño cómo se ve en 5 minutos esta semana?',
+  r_prueba:'¡Listo, {nombre}! {negocio} ya tiene su prueba gratis de Redeo por 14 días. Cualquier duda para dar sellos, aquí estoy.',
+  r_mitad:'Hola {nombre}, ¿cómo van los sellos en {negocio}? Si quieres, paso 5 minutos a acomodar el cartel o a enseñarle a tu equipo a dar el sello.',
+  r_fin:'Hola {nombre}, tu prueba de Redeo termina en un par de días. Tus clientes y sus sellos se quedan guardados. ¿Te paso los planes para seguir?',
+  r_bienv:'¡Bienvenido a Redeo, {nombre}! {negocio} ya está activo. Cualquier cosa que necesites para tus clientes, me escribes.'
 };
-const TPL_NAMES = {propuesta:'Enviar propuesta', seguimiento1:'Seguimiento 1', seguimiento2:'Seguimiento 2', cita:'Confirmar cita'};
+const TPL_NAMES = {propuesta:'Enviar propuesta', seguimiento1:'Seguimiento 1', seguimiento2:'Seguimiento 2', cita:'Confirmar cita',
+  r_intro:'Presentar Redeo', r_prueba:'Inicio de prueba', r_mitad:'Revisión de prueba', r_fin:'Fin de prueba', r_bienv:'Bienvenida'};
+/* qué pasa al abrir WhatsApp con cada mensaje: etapa nueva, días al siguiente seguimiento y texto del historial */
+const ACTIONS = {
+  propuesta:{etapa:'env',dias:3,log:'Propuesta enviada por WhatsApp'},
+  seguimiento1:{etapa:'seg',dias:4,log:'Seguimiento 1 enviado'},
+  seguimiento2:{etapa:'seg',dias:7,log:'Seguimiento 2 enviado'},
+  r_intro:{etapa:'rcon',dias:3,log:'Redeo presentado por WhatsApp'},
+  r_prueba:{etapa:'rpru',dias:7,log:'Prueba gratis iniciada'},
+  r_mitad:{etapa:'rpru',dias:6,log:'Revisión de la prueba'},
+  r_fin:{etapa:'rpag',dias:2,log:'Aviso de fin de prueba'},
+  r_bienv:{etapa:'ract',dias:null,log:'Cliente activo'}
+};
+let line='pae'; try{ if(localStorage.getItem('crmLine')==='redeo') line='redeo'; }catch(e){}
+const L=()=>LINES[line];
+const lineOf=p=>(p.linea==='redeo'||/^r(por|con|pru|pag|act|per)$/.test(p.etapa||''))?'redeo':'pae';
 let prospects=[], tpl={...DEFAULT_TPL}, filter='all', query='', readOnly=false, loaded=false;
 
 const $=s=>document.querySelector(s);
@@ -150,29 +187,34 @@ function digits(t){let d=String(t||'').replace(/\D/g,'');if(d.length===10)d='52'
 function firstName(p){const n=(p.prospecto||'').trim();if(!n||/^sin nombre/i.test(n))return '';return n.split(/\s+/)[0];}
 function fill(t,p,extra={}){return t.replace(/\{nombre\}/g,firstName(p)).replace(/\{negocio\}/g,p.negocio||'').replace(/\{fecha\}/g,extra.fecha||'').replace(/Hola ,/g,'Hola,').replace(/\s+,/g,',');}
 function waLink(p,text){return `https://wa.me/${digits(p.telefono)}?text=${encodeURIComponent(text)}`;}
-function dueState(p){if(!p.proxSeguimiento||['cer','per','sin'].includes(p.etapa))return '';const t=today();if(p.proxSeguimiento<t)return 'late';if(p.proxSeguimiento===t)return 'today';return '';}
+function dueState(p){if(!p.proxSeguimiento||LINES[lineOf(p)].closed.includes(p.etapa))return '';const t=today();if(p.proxSeguimiento<t)return 'late';if(p.proxSeguimiento===t)return 'today';return '';}
 function status(msg){const s=$('#status');s.textContent=msg||'';s.classList.toggle('show',!!msg);}
 
 function render(){
+  const cfg=L(); const STAGES=cfg.stages;
+  const mine=prospects.filter(p=>lineOf(p)===line);
+  const nP=prospects.filter(p=>lineOf(p)==='pae').length, nR=prospects.length-nP;
+  $('#lines').innerHTML=`<button data-line="pae" class="${line==='pae'?'on':''}" role="tab" aria-selected="${line==='pae'}">Contenido P.A.E.<small>${nP}</small></button><button data-line="redeo" class="${line==='redeo'?'on':''}" role="tab" aria-selected="${line==='redeo'}">Redeo<small>${nR}</small></button>`;
+  if(filter!=='all'&&!STAGES.some(s=>s.id===filter)) filter='all';
   const counts=Object.fromEntries(STAGES.map(s=>[s.id,0]));
-  prospects.forEach(p=>{counts[p.etapa]=(counts[p.etapa]||0)+1;});
-  const active=prospects.filter(p=>!['cer','per'].includes(p.etapa)).length;
-  const dueN=prospects.filter(p=>dueState(p)).length;
-  $('#summary').textContent=loaded?`${prospects.length} prospectos · ${active} activos · ${dueN} seguimientos para hoy o atrasados`:'Cargando prospectos…';
-  $('#stages').innerHTML=`<button class="chip ${filter==='all'?'on':''}" data-f="all" role="tab" aria-selected="${filter==='all'}"><b>${prospects.length}</b><span>Todos</span></button>`+
+  mine.forEach(p=>{counts[p.etapa]=(counts[p.etapa]||0)+1;});
+  const active=mine.filter(p=>!cfg.closed.includes(p.etapa)||cfg.open.includes(p.etapa)).length;
+  const dueN=mine.filter(p=>dueState(p)).length;
+  $('#summary').textContent=loaded?`${mine.length} prospectos · ${active} activos · ${dueN} seguimientos para hoy o atrasados`:'Cargando prospectos…';
+  $('#stages').innerHTML=`<button class="chip ${filter==='all'?'on':''}" data-f="all" role="tab" aria-selected="${filter==='all'}"><b>${mine.length}</b><span>Todos</span></button>`+
     STAGES.map(s=>`<button class="chip ${filter===s.id?'on':''}" data-f="${s.id}" role="tab" aria-selected="${filter===s.id}"><b>${counts[s.id]||0}</b><span>${s.label}</span></button>`).join('');
-  const todayList=prospects.filter(p=>p.etapa==='por'||dueState(p)).sort((a,b)=>(a.proxSeguimiento||'0').localeCompare(b.proxSeguimiento||'0'));
+  const todayList=mine.filter(p=>cfg.open.includes(p.etapa)||dueState(p)).sort((a,b)=>(a.proxSeguimiento||'0').localeCompare(b.proxSeguimiento||'0'));
   $('#today').innerHTML=todayList.length?todayList.map(rowHTML).join(''):`<div class="empty">Nada pendiente para hoy. Los seguimientos aparecen aquí el día que toca.</div>`;
-  let list=prospects.filter(p=>filter==='all'||p.etapa===filter);
+  let list=mine.filter(p=>filter==='all'||p.etapa===filter);
   if(query){const q=query.toLowerCase();list=list.filter(p=>(p.negocio+' '+p.prospecto+' '+p.giro).toLowerCase().includes(q));}
   const order=STAGES.map(s=>s.id);
   list.sort((a,b)=>order.indexOf(a.etapa)-order.indexOf(b.etapa)||(a.negocio||'').localeCompare(b.negocio||''));
-  $('#listTitle').textContent=filter==='all'?'Todos los prospectos':SMAP[filter].label;
-  $('#list').innerHTML=list.length?list.map(rowHTML).join(''):`<div class="empty">${loaded?'No hay prospectos en esta etapa.':'Cargando…'}</div>`;
+  $('#listTitle').textContent=filter==='all'?(line==='redeo'?'Todos los prospectos de Redeo':'Todos los prospectos'):SMAP[filter].label;
+  $('#list').innerHTML=list.length?list.map(rowHTML).join(''):`<div class="empty">${loaded?(line==='redeo'&&!mine.length?'Todavía no hay prospectos de Redeo. Agrega el primero con “+ Prospecto”.':'No hay prospectos en esta etapa.'):'Cargando…'}</div>`;
 }
 function rowHTML(p){
-  const s=SMAP[p.etapa]||STAGES[1]; const d=dueState(p);
-  const dueTxt=p.proxSeguimiento&&!['cer','per','sin'].includes(p.etapa)?`<span class="due ${d}">${d==='late'?'Atrasado · ':d==='today'?'Hoy · ':'Sigue '}${fmt(p.proxSeguimiento)}</span>`:'';
+  const s=SMAP[p.etapa]||SMAP[LINES[lineOf(p)].first]; const d=dueState(p);
+  const dueTxt=p.proxSeguimiento&&!LINES[lineOf(p)].closed.includes(p.etapa)?`<span class="due ${d}">${d==='late'?'Atrasado · ':d==='today'?'Hoy · ':'Sigue '}${fmt(p.proxSeguimiento)}</span>`:'';
   return `<div class="row" tabindex="0" data-id="${esc(p.id)}"><span class="stripe" style="background:var(${s.c})"></span>
   <div class="who"><div class="neg">${esc(p.negocio)}</div><div class="meta">${esc(p.prospecto)} · ${esc(p.telefono)}</div></div>
   <div class="right"><span class="pill" style="background:var(${s.bg});color:var(${s.c})">${s.label}</span>${dueTxt}</div></div>`;
@@ -180,11 +222,11 @@ function rowHTML(p){
 
 /* ---------- panel ---------- */
 let cur=null, curTpl=null;
-function openPanel(p){cur=p?{...p}:{id:null,negocio:'',prospecto:'',telefono:'',giro:'',etapa:'por',proxSeguimiento:'',notas:'',propuesta:'',historial:[]};curTpl=null;drawPanel();$('#veil').classList.add('show');setTimeout(()=>{const f=$('#panel input');f&&!p&&f.focus();},50);}
+function openPanel(p){cur=p?{...p}:{id:null,negocio:'',prospecto:'',telefono:'',giro:'',etapa:L().first,linea:line,proxSeguimiento:'',notas:'',propuesta:'',historial:[]};curTpl=null;drawPanel();$('#veil').classList.add('show');setTimeout(()=>{const f=$('#panel input');f&&!p&&f.focus();},50);}
 function closePanel(){$('#veil').classList.remove('show');cur=null;}
 function drawPanel(){
-  const p=cur; const isNew=!p.id;
-  const tplBtns=Object.keys(TPL_NAMES).map(k=>`<button class="btn ${curTpl===k?'on':'ghost'}" data-tpl="${k}" type="button">${TPL_NAMES[k]}</button>`).join('');
+  const p=cur; const isNew=!p.id; const cfg=LINES[lineOf(p)];
+  const tplBtns=cfg.tpls.map(k=>`<button class="btn ${curTpl===k?'on':'ghost'}" data-tpl="${k}" type="button">${TPL_NAMES[k]}</button>`).join('');
   let msg='';
   if(curTpl&&!isNew){
     const fecha=curTpl==='cita'?($('#citaFecha')?.value||''):'';
@@ -196,15 +238,15 @@ function drawPanel(){
     <div class="actions"><a class="btn primary" id="sendWa" href="${esc(waLink(p,text))}" target="_blank" rel="noopener">Abrir WhatsApp</a></div>
     <p class="hint">Al abrir WhatsApp se registra el envío y se agenda el siguiente seguimiento.</p></div>`;
   }
-  $('#panel').innerHTML=`<div class="top"><h3 id="pTitle">${isNew?'Nuevo prospecto':esc(p.negocio)}</h3><button class="x" id="pClose" aria-label="Cerrar" type="button">×</button></div>
+  $('#panel').innerHTML=`<div class="top"><h3 id="pTitle">${isNew?(lineOf(p)==='redeo'?'Nuevo prospecto de Redeo':'Nuevo prospecto'):esc(p.negocio)}</h3><button class="x" id="pClose" aria-label="Cerrar" type="button">×</button></div>
   ${!isNew?`<div class="tabs" aria-label="Mensajes de WhatsApp">${tplBtns}</div>${msg}`:''}
   <div class="grid2">
     <div><label for="fNeg">Negocio</label><input id="fNeg" value="${esc(p.negocio)}"></div>
     <div><label for="fPro">Prospecto</label><input id="fPro" value="${esc(p.prospecto)}"></div>
     <div><label for="fTel">Teléfono (WhatsApp)</label><input id="fTel" inputmode="tel" value="${esc(p.telefono)}"></div>
-    <div><label for="fEta">Etapa</label><select id="fEta">${STAGES.map(s=>`<option value="${s.id}" ${p.etapa===s.id?'selected':''}>${s.label}</option>`).join('')}</select></div>
+    <div><label for="fEta">Etapa</label><select id="fEta">${cfg.stages.map(s=>`<option value="${s.id}" ${p.etapa===s.id?'selected':''}>${s.label}</option>`).join('')}</select></div>
     <div><label for="fSeg">Próximo seguimiento</label><input id="fSeg" type="date" value="${esc(p.proxSeguimiento)}"></div>
-    <div><label for="fPdf">Archivo de la propuesta</label><input id="fPdf" value="${esc(p.propuesta)}"></div>
+    <div><label for="fPdf">${cfg.fileLabel}</label><input id="fPdf" value="${esc(p.propuesta)}"></div>
   </div>
   <label for="fGiro">Giro</label><input id="fGiro" value="${esc(p.giro)}">
   <label for="fNotas">Notas</label><textarea id="fNotas">${esc(p.notas)}</textarea>
@@ -237,6 +279,7 @@ async function save(p,patch,logText){
   catch(e){ status('No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.'); load(); return false; }
 }
 document.addEventListener('click',async ev=>{
+  const lb=ev.target.closest('[data-line]'); if(lb){line=lb.dataset.line;filter='all';try{localStorage.setItem('crmLine',line);}catch(e){}render();return;}
   const chip=ev.target.closest('.chip'); if(chip){filter=chip.dataset.f;render();return;}
   const row=ev.target.closest('.row'); if(row){const p=prospects.find(x=>x.id===row.dataset.id);p&&openPanel(p);return;}
   if(ev.target.id==='btnNew'){openPanel(null);return;}
@@ -258,17 +301,15 @@ document.addEventListener('click',async ev=>{
   if(ev.target.id==='sendWa'&&cur){
     const text=$('#msgText').value; ev.target.href=waLink(cur,text);
     const f=readForm(); const k=curTpl; let patch={...f}, log='';
-    if(k==='propuesta'){patch.etapa='env';patch.proxSeguimiento=addDays(3);log='Propuesta enviada por WhatsApp';}
-    else if(k==='seguimiento1'){patch.etapa='seg';patch.proxSeguimiento=addDays(4);log='Seguimiento 1 enviado';}
-    else if(k==='seguimiento2'){patch.etapa='seg';patch.proxSeguimiento=addDays(7);log='Seguimiento 2 enviado';}
-    else if(k==='cita'){const c=$('#citaFecha').value;patch.etapa='cita';patch.proxSeguimiento=c?c.slice(0,10):f.proxSeguimiento;log='Cita confirmada'+(c?': '+fmtLong(c):'');}
+    if(k==='cita'){const c=$('#citaFecha').value;patch.etapa='cita';patch.proxSeguimiento=c?c.slice(0,10):f.proxSeguimiento;log='Cita confirmada'+(c?': '+fmtLong(c):'');}
+    else if(ACTIONS[k]){const A=ACTIONS[k];patch.etapa=A.etapa;patch.proxSeguimiento=A.dias==null?'':addDays(A.dias);log=A.log;}
     save(cur,patch,log).then(ok=>{if(ok)closePanel();});
   }
   if(ev.target.id==='tSave'){
-    const nt={};Object.keys(DEFAULT_TPL).forEach(k=>nt[k]=$('#t_'+k).value);
+    const nt={...tpl};L().tpls.forEach(k=>nt[k]=$('#t_'+k).value);
     tpl={...nt};closePanel();try{await api('saveTpl',nt);}catch(e){status('No se pudieron guardar los mensajes.');}
   }
-  if(ev.target.id==='tReset'){Object.keys(DEFAULT_TPL).forEach(k=>$('#t_'+k).value=DEFAULT_TPL[k]);}
+  if(ev.target.id==='tReset'){L().tpls.forEach(k=>$('#t_'+k).value=DEFAULT_TPL[k]);}
 });
 document.addEventListener('input',ev=>{
   if(ev.target.id==='q'){query=ev.target.value;render();}
@@ -283,9 +324,9 @@ $('#veil').addEventListener('click',ev=>{if(ev.target.id==='veil')closePanel();}
 
 function openTpl(){
   cur=null;
-  $('#panel').innerHTML=`<div class="top"><h3 id="pTitle">Mensajes de WhatsApp</h3><button class="x" id="pClose" aria-label="Cerrar" type="button">×</button></div>
+  $('#panel').innerHTML=`<div class="top"><h3 id="pTitle">Mensajes de WhatsApp · ${L().name}</h3><button class="x" id="pClose" aria-label="Cerrar" type="button">×</button></div>
   <p class="sub" style="margin-top:6px">Usa {nombre}, {negocio} y {fecha}; se llenan solos con los datos de cada prospecto.</p>
-  ${Object.keys(DEFAULT_TPL).map(k=>`<label for="t_${k}">${TPL_NAMES[k]}</label><textarea id="t_${k}">${esc(tpl[k])}</textarea>`).join('')}
+  ${L().tpls.map(k=>`<label for="t_${k}">${TPL_NAMES[k]}</label><textarea id="t_${k}">${esc(tpl[k])}</textarea>`).join('')}
   <div class="actions"><button class="btn primary" id="tSave" type="button">Guardar mensajes</button><button class="btn ghost" id="tReset" type="button">Volver a los originales</button></div>`;
   $('#veil').classList.add('show');
 }
