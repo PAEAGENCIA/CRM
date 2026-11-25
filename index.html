@@ -230,7 +230,8 @@ function drawPanel(){
   let msg='';
   if(curTpl&&!isNew){
     const fecha=curTpl==='cita'?($('#citaFecha')?.value||''):'';
-    const text=fill(tpl[curTpl],p,{fecha:fecha?fmtLong(fecha):'{fecha}'});
+    const custom=curTpl==='r_intro'&&/(?:^|\n)Mensaje:\s*([\s\S]+)$/.exec(p.notas||''); /* mensaje personalizado guardado en Notas */
+    const text=custom?custom[1].trim():fill(tpl[curTpl],p,{fecha:fecha?fmtLong(fecha):'{fecha}'});
     msg=`<div class="msgbox"><label for="msgText" style="margin-top:0">Mensaje · ${TPL_NAMES[curTpl]}</label>
     ${curTpl==='cita'?`<label for="citaFecha">Fecha y hora de la reunión</label><input id="citaFecha" type="datetime-local" value="${esc(p._cita||'')}">`:''}
     <textarea id="msgText">${esc(text)}</textarea>
